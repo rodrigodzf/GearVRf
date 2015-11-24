@@ -17,27 +17,26 @@ package org.gearvrf.sample.sceneobjects;
 
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.graphics.ImageFormat;
 import android.hardware.Camera;
 import android.hardware.Camera.Parameters;
+import android.hardware.Camera.PreviewCallback;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 import org.gearvrf.GVRActivity;
+import org.gearvrf.scene_objects.view.GVRView;
+import org.gearvrf.scene_objects.view.GVRWebView;
 
 public class SceneObjectActivity extends GVRActivity {
     private static final String TAG = "SceneObjectActivity";
     private SampleViewManager mViewManager;
-    private float lastY = 0;
-    private float lastX = 0;
-    private float lastYAngle = 0;
-    private float lastXAngle = 0;
-    private float yangle = 0;
-    private float xangle = 0;
     private long lastDownTime = 0;
-    private WebView webView;
+    private GVRWebView webView;
     private Camera camera;
 
     /** Called when the activity is first created. */
@@ -53,7 +52,7 @@ public class SceneObjectActivity extends GVRActivity {
     }
 
     private void createWebView() {
-        webView = new WebView(this);
+        webView = new GVRWebView(this);
         webView.setInitialScale(100);
         webView.measure(2000, 1000);
         webView.layout(0, 0, 2000, 1000);
@@ -74,6 +73,25 @@ public class SceneObjectActivity extends GVRActivity {
                 PackageManager.FEATURE_CAMERA);
     }
 
+    private long prevTime = 0;
+    private PreviewCallback previewCallback = new PreviewCallback() {
+
+        @Override
+        /**
+         * The byte data comes from the android camera in the yuv format. so we
+         * need to convert it to rgba format.
+         */
+        public void onPreviewFrame(byte[] data, Camera camera) {
+            long currentTime = System.currentTimeMillis();
+            Log.d(TAG,
+                    "Preview Frame rate "
+                            + Math.round(1000 / (currentTime - prevTime)));
+            prevTime = currentTime;
+            camera.addCallbackBuffer(previewCallbackBuffer);
+        }
+    };
+
+    private byte[] previewCallbackBuffer = null;
     private void createCameraView() {
 
         if (!checkCameraHardware(this)) {
@@ -87,8 +105,14 @@ public class SceneObjectActivity extends GVRActivity {
             camera = Camera.open();
             if (camera != null) {
                 Parameters params = camera.getParameters();
-                params.setFocusMode(Parameters.FOCUS_MODE_CONTINUOUS_VIDEO);
-                camera.setParameters(params);
+
+                int bufferSize = params.getPreviewSize().height
+                        * params.getPreviewSize().width
+                        * ImageFormat
+                                .getBitsPerPixel(params.getPreviewFormat()) / 8;
+                previewCallbackBuffer = new byte[bufferSize];
+                camera.addCallbackBuffer(previewCallbackBuffer);
+                camera.setPreviewCallbackWithBuffer(previewCallback);
                 camera.startPreview();
             }
         } catch (Exception exception) {
@@ -96,7 +120,7 @@ public class SceneObjectActivity extends GVRActivity {
         }
     }
 
-    WebView getWebView() {
+    GVRView getWebView() {
         return webView;
     }
 
@@ -109,6 +133,7 @@ public class SceneObjectActivity extends GVRActivity {
         super.onPause();
         mViewManager.onPause();
         if (camera != null) {
+            camera.setPreviewCallback(null);
             camera.stopPreview();
             camera.release();
             camera = null;
@@ -118,43 +143,14 @@ public class SceneObjectActivity extends GVRActivity {
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-            lastY = event.getY();
-            lastX = event.getX();
             lastDownTime = event.getDownTime();
         }
 
         if (event.getActionMasked() == MotionEvent.ACTION_UP) {
             // check if it was a quick tap
             if (event.getEventTime() - lastDownTime < 200) {
-                // if things are rotating, stop the rotation.
-                if (xangle != 0 || yangle != 0) {
-                    xangle = 0.0f;
-                    yangle = 0.0f;
-                    mViewManager.setXAngle(0.0f);
-                    mViewManager.setYAngle(0.0f);
-                    return true;
-                }
-
-                // otherwise, pass it as a tap to the ViewManager
-                mViewManager.setXAngle(0.0f);
-                mViewManager.setYAngle(0.0f);
+                // pass it as a tap to the ViewManager
                 mViewManager.onTap();
-            }
-
-            float xdifference = lastX - event.getX();
-            if (Math.abs(xdifference) > 10) {
-                xangle = lastXAngle + xdifference / 10;
-                mViewManager.setXAngle(1.0f);
-                lastX = event.getX();
-                lastXAngle = xangle;
-            }
-
-            float ydifference = lastY - event.getY();
-            if (Math.abs(ydifference) > 10) {
-                yangle = lastYAngle + ydifference / 10;
-                mViewManager.setYAngle(1.0f);
-                lastY = event.getY();
-                lastYAngle = yangle;
             }
         }
 

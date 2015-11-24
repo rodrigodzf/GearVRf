@@ -419,10 +419,16 @@ public class GVRSceneObject extends GVRHybridObject {
      *            New {@link GVREyePointeeHolder}.
      */
     public void attachEyePointeeHolder(GVREyePointeeHolder eyePointeeHolder) {
-        mEyePointeeHolder = eyePointeeHolder;
-        eyePointeeHolder.setOwnerObject(this);
-        NativeSceneObject.attachEyePointeeHolder(getNative(),
+        // see GVRPicker.findObjects
+        GVRPicker.sFindObjectsLock.lock();
+        try {
+            mEyePointeeHolder = eyePointeeHolder;
+            eyePointeeHolder.setOwnerObject(this);
+            NativeSceneObject.attachEyePointeeHolder(getNative(),
                 eyePointeeHolder.getNative());
+        } finally {
+            GVRPicker.sFindObjectsLock.unlock();
+        }
     }
 
     /**
@@ -560,6 +566,45 @@ public class GVRSceneObject extends GVRHybridObject {
         mChildren.remove(child);
         child.mParent = null;
         NativeSceneObject.removeChildObject(getNative(), child.getNative());
+    }
+
+    /**
+     * Performs case-sensitive search
+     * 
+     * @param name
+     * @return null if nothing was found or name was null/empty
+     */
+    public GVRSceneObject[] getSceneObjectsByName(final String name) {
+        if (null == name || name.isEmpty()) {
+            return null;
+        }
+
+        final List<GVRSceneObject> matches = new ArrayList<GVRSceneObject>();
+        if (name.equals(getName())) {
+            matches.add(this);
+        }
+        GVRScene.getSceneObjectsByName(matches, mChildren, name);
+
+        return 0 != matches.size() ? matches.toArray(new GVRSceneObject[matches.size()]) : null;
+    }
+
+    /**
+     * Performs case-sensitive depth-first search
+     * 
+     * @param name
+     * @return first match in the graph; null if nothing was found or name was null/empty;
+     * in case there might be multiple matches consider using getSceneObjectsByName
+     */
+    public GVRSceneObject getSceneObjectByName(final String name) {
+        if (null == name || name.isEmpty()) {
+            return null;
+        }
+
+        GVRSceneObject scene = GVRScene.getSceneObjectByName(mChildren, name);
+        if (null == scene && name.equals(getName())) {
+            scene = this;
+        }
+        return scene;
     }
 
     /**

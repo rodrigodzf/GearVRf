@@ -35,11 +35,11 @@ import org.gearvrf.scene_objects.GVRSphereSceneObject;
 import org.gearvrf.scene_objects.GVRTextViewSceneObject;
 import org.gearvrf.scene_objects.GVRVideoSceneObject;
 import org.gearvrf.scene_objects.GVRVideoSceneObject.GVRVideoType;
-import org.gearvrf.scene_objects.GVRWebViewSceneObject;
+import org.gearvrf.scene_objects.GVRViewSceneObject;
+import org.gearvrf.scene_objects.view.GVRView;
 
 import android.media.MediaPlayer;
 import android.view.Gravity;
-import android.webkit.WebView;
 
 public class SampleViewManager extends GVRScript {
     private List<GVRSceneObject> objectList = new ArrayList<GVRSceneObject>();
@@ -84,12 +84,13 @@ public class SampleViewManager extends GVRScript {
         GVRSphereSceneObject sphereObject = new GVRSphereSceneObject(
                 gvrContext, true, material);
         GVRCylinderSceneObject cylinderObject = new GVRCylinderSceneObject(
-                gvrContext, 0.5f, 0.5f, 1.0f, 10, 36, true, futureTextureList, 2, 4);
+                gvrContext, true, material);
         GVRConeSceneObject coneObject = new GVRConeSceneObject(gvrContext,
                 true, material);
-        GVRWebViewSceneObject webViewObject = createWebViewObject(gvrContext);
+        GVRViewSceneObject webViewObject = createWebViewObject(gvrContext);
         GVRCameraSceneObject cameraObject = new GVRCameraSceneObject(
-                gvrContext, 8.0f, 4.0f, mActivity.getCamera());
+                gvrContext, 3.6f, 2.0f, mActivity.getCamera());
+        cameraObject.setUpCameraForVrMode(1); // set up 60 fps camera preview.
         GVRVideoSceneObject videoObject = createVideoObject(gvrContext);
         GVRTextViewSceneObject textViewSceneObject = new GVRTextViewSceneObject(
                 gvrContext, mActivity, "Hello World!");
@@ -124,16 +125,16 @@ public class SampleViewManager extends GVRScript {
         videoObject.getTransform().setPosition(0.0f, 0.0f, -4.0f);
         textViewSceneObject.getTransform().setPosition(0.0f, 0.0f, -2.0f);
 
-        // add the scene objects to the scene graph
-        scene.addSceneObject(quadObject);
-        scene.addSceneObject(cubeObject);
-        scene.addSceneObject(sphereObject);
-        scene.addSceneObject(cylinderObject);
-        scene.addSceneObject(coneObject);
-        scene.addSceneObject(webViewObject);
-        scene.addSceneObject(cameraObject);
-        scene.addSceneObject(videoObject);
-        scene.addSceneObject(textViewSceneObject);
+        // add the scene objects to the scene graph.
+        // deal differently with camera scene object: we want it to move
+        // with the camera.
+        for (GVRSceneObject object : objectList) {
+            if (object instanceof GVRCameraSceneObject) {
+                scene.getMainCameraRig().addChildObject(object);
+            } else {
+                scene.addSceneObject(object);
+            }
+        }
     }
 
     private GVRVideoSceneObject createVideoObject(GVRContext gvrContext) {
@@ -145,26 +146,15 @@ public class SampleViewManager extends GVRScript {
         return video;
     }
 
-    private GVRWebViewSceneObject createWebViewObject(GVRContext gvrContext) {
-        WebView webView = mActivity.getWebView();
-        GVRWebViewSceneObject webObject = new GVRWebViewSceneObject(gvrContext,
-                8.0f, 4.0f, webView);
+    private GVRViewSceneObject createWebViewObject(GVRContext gvrContext) {
+        GVRView webView = mActivity.getWebView();
+        GVRViewSceneObject webObject = new GVRViewSceneObject(gvrContext,
+                webView, 8.0f, 4.0f);
         webObject.setName("web view object");
         webObject.getRenderData().getMaterial().setOpacity(1.0f);
         webObject.getTransform().setPosition(0.0f, 0.0f, -4.0f);
 
         return webObject;
-    }
-
-    private float mYAngle = 0;
-    private float mXAngle = 0;
-
-    public void setYAngle(float angle) {
-        mYAngle = angle;
-    }
-
-    public void setXAngle(float angle) {
-        mXAngle = angle;
     }
 
     public void onPause() {
@@ -204,9 +194,5 @@ public class SampleViewManager extends GVRScript {
 
     @Override
     public void onStep() {
-        objectList.get(currentObject).getTransform()
-                .rotateByAxis(mXAngle, 1.0f, 0.0f, 0.0f);
-        objectList.get(currentObject).getTransform()
-                .rotateByAxis(mYAngle, 0.0f, 1.0f, 0.0f);
     }
 }

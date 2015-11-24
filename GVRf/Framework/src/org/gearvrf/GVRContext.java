@@ -19,15 +19,14 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.concurrent.Future;
-import java.util.EnumSet;
 
 import org.gearvrf.GVRAndroidResource.BitmapTextureCallback;
 import org.gearvrf.GVRAndroidResource.CompressedTextureCallback;
 import org.gearvrf.GVRAndroidResource.MeshCallback;
 import org.gearvrf.GVRAndroidResource.TextureCallback;
-import org.gearvrf.GVRImportSettings;
 import org.gearvrf.GVRMaterial.GVRShaderType;
 import org.gearvrf.animation.GVRAnimation;
 import org.gearvrf.animation.GVRAnimationEngine;
@@ -225,17 +224,17 @@ public abstract class GVRContext {
      */
     public GVRMesh loadMesh(GVRAndroidResource androidResource,
             EnumSet<GVRImportSettings> settings) {
-        GVRMesh mesh = sMeshCache.get(androidResource);
+        GVRMesh mesh = meshCache.get(androidResource);
         if (mesh == null) {
             GVRAssimpImporter assimpImporter = GVRImporter
                     .readFileFromResources(this, androidResource, settings);
             mesh = assimpImporter.getMesh(0);
-            sMeshCache.put(androidResource, mesh);
+            meshCache.put(androidResource, mesh);
         }
         return mesh;
     }
 
-    private final static ResourceCache<GVRMesh> sMeshCache = new ResourceCache<GVRMesh>();
+    private final ResourceCache<GVRMesh> meshCache = new ResourceCache<GVRMesh>();
 
     /**
      * Loads a mesh file, asynchronously, at a default priority.
@@ -507,6 +506,7 @@ public abstract class GVRContext {
      */
     public GVRSceneObject getAssimpModel(String assetRelativeFilename,
             EnumSet<GVRImportSettings> settings) throws IOException {
+        
         GVRAssimpImporter assimpImporter = GVRImporter.readFileFromResources(
                 this, new GVRAndroidResource(this, assetRelativeFilename),
                 settings);
@@ -635,7 +635,7 @@ public abstract class GVRContext {
 
         // Recurse through the entire hierarchy to attache all the meshes as
         // Scene Object
-        this.recurseAssimpNodes(assetRelativeFilename, wholeSceneObject,
+        this.recurseAssimpNodes(assimpImporter, assetRelativeFilename, wholeSceneObject,
                 rootNode, wrapperProvider);
 
         return wholeSceneObject;
@@ -664,34 +664,44 @@ public abstract class GVRContext {
      *            AiWrapperProvider for unwrapping Jassimp properties.
      * 
      */
+
     @SuppressWarnings("resource")
     private void recurseAssimpNodes(
+            GVRAssimpImporter assimpImporter,
             String assetRelativeFilename,
             GVRSceneObject parentSceneObject,
             AiNode node,
             AiWrapperProvider<byte[], AiMatrix4f, AiColor, AiNode, byte[]> wrapperProvider) {
+  
         try {
             GVRSceneObject newParentSceneObject = new GVRSceneObject(this);
+
             if (node.getNumMeshes() == 0) {
                 parentSceneObject.addChildObject(newParentSceneObject);
                 parentSceneObject = newParentSceneObject;
             } else if (node.getNumMeshes() == 1) {
                 // add the scene object to the scene graph
                 GVRSceneObject sceneObject = createSceneObject(
-                        assetRelativeFilename, node, 0, wrapperProvider);
+                        assimpImporter, assetRelativeFilename, node, 0, wrapperProvider);
                 parentSceneObject.addChildObject(sceneObject);
                 parentSceneObject = sceneObject;
             } else {
                 for (int i = 0; i < node.getNumMeshes(); i++) {
                     GVRSceneObject sceneObject = createSceneObject(
-                            assetRelativeFilename, node, i, wrapperProvider);
+                            assimpImporter, assetRelativeFilename, node, i, wrapperProvider);
                     newParentSceneObject.addChildObject(sceneObject);
                 }
                 parentSceneObject.addChildObject(newParentSceneObject);
                 parentSceneObject = newParentSceneObject;
+           }
+            if(node.getTransform(wrapperProvider) != null) {
+                float[] data = node.getTransform(wrapperProvider).m_data;
+                parentSceneObject.getTransform().setModelMatrix(transpose(data));
+                parentSceneObject.setName(node.getName());
             }
+            
             for (int i = 0; i < node.getNumChildren(); i++) {
-                this.recurseAssimpNodes(assetRelativeFilename,
+                this.recurseAssimpNodes(assimpImporter, assetRelativeFilename,
                         parentSceneObject, node.getChildren().get(i),
                         wrapperProvider);
             }
@@ -699,6 +709,27 @@ public abstract class GVRContext {
             // Error while recursing the Scene Graph
             e.printStackTrace();
         }
+    }
+    
+    private float[] transpose(float[] modelMatrix){
+        float[] transposed = new float[16];
+        transposed[0] = modelMatrix[0];
+        transposed[4] = modelMatrix[1];
+        transposed[8] = modelMatrix[2];
+        transposed[12] = modelMatrix[3];
+        transposed[1] = modelMatrix[4];
+        transposed[5] = modelMatrix[5];
+        transposed[9] = modelMatrix[6];
+        transposed[13] = modelMatrix[7];
+        transposed[2] = modelMatrix[8];
+        transposed[6] = modelMatrix[9];
+        transposed[10] = modelMatrix[10];
+        transposed[14] = modelMatrix[11];
+        transposed[3] = modelMatrix[12];
+        transposed[7] = modelMatrix[13];
+        transposed[11] = modelMatrix[14];
+        transposed[15] = modelMatrix[15];
+        return transposed;
     }
 
     /**
@@ -729,22 +760,21 @@ public abstract class GVRContext {
      *             File does not exist or cannot be read
      */
     private GVRSceneObject createSceneObject(
+            GVRAssimpImporter assimpImporter,
             String assetRelativeFilename,
             AiNode node,
             int index,
             AiWrapperProvider<byte[], AiMatrix4f, AiColor, AiNode, byte[]> wrapperProvider)
             throws IOException {
-
+        
         FutureWrapper<GVRMesh> futureMesh = new FutureWrapper<GVRMesh>(
-                this.getNodeMesh(new GVRAndroidResource(this,
-                        assetRelativeFilename), node.getName(), index));
+                this.getNodeMesh(assimpImporter, node.getName(), index));
 
-        AiMaterial material = this.getMeshMaterial(new GVRAndroidResource(this,
-                assetRelativeFilename), node.getName(), index);
+        AiMaterial material = this.getMeshMaterial(assimpImporter, node.getName(), index);
         
-        GVRMaterial meshMaterial = new GVRMaterial(this,
+        final GVRMaterial meshMaterial = new GVRMaterial(this,
                 GVRShaderType.Assimp.ID);
-        
+     
         /* Feature set */
         int assimpFeatureSet = 0x00000000;
         
@@ -777,21 +807,35 @@ public abstract class GVRContext {
         meshMaterial.setOpacity(opacity);
 
         /* Diffuse Texture */
-        String texDiffuseFileName = material.getTextureFile(
+        final String texDiffuseFileName = material.getTextureFile(
                 AiTextureType.DIFFUSE, 0);
         if (texDiffuseFileName != null && !texDiffuseFileName.isEmpty()) {
-            assimpFeatureSet = GVRShaderType.Assimp.setBit(assimpFeatureSet,
-                    GVRShaderType.Assimp.AS_DIFFUSE_TEXTURE);
-            Future<GVRTexture> futureDiffuseTexture = this
-                    .loadFutureTexture(new GVRAndroidResource(this,
-                            texDiffuseFileName));
-            meshMaterial.setMainTexture(futureDiffuseTexture);
+            loadTexture(new TextureCallback() {
+                @Override
+                public void loaded(GVRTexture texture, GVRAndroidResource ignored) {
+                    meshMaterial.setMainTexture(texture);
+                    final int features = GVRShaderType.Assimp.setBit(
+                            meshMaterial.getShaderFeatureSet(),
+                            GVRShaderType.Assimp.AS_DIFFUSE_TEXTURE);
+                    meshMaterial.setShaderFeatureSet(features);
+                }
+                @Override
+                public void failed(Throwable t, GVRAndroidResource androidResource) {
+                    Log.e(TAG, "Error loading diffuse texture %s; exception: %s",
+                        texDiffuseFileName, t.getMessage());
+                }
+                @Override
+                public boolean stillWanted(GVRAndroidResource androidResource) {
+                    return true;
+                }
+            }, new GVRAndroidResource(this, texDiffuseFileName));
         }
-
+ 
         /* Apply feature set to the material */
         meshMaterial.setShaderFeatureSet(assimpFeatureSet);
 
         GVRSceneObject sceneObject = new GVRSceneObject(this);
+        sceneObject.setName(node.getName());
         GVRRenderData sceneObjectRenderData = new GVRRenderData(this);
         sceneObjectRenderData.setMesh(futureMesh);
         sceneObjectRenderData.setMaterial(meshMaterial);
@@ -804,11 +848,9 @@ public abstract class GVRContext {
      * 
      * @return The mesh, encapsulated as a {@link GVRMesh}.
      */
-    public GVRMesh getNodeMesh(GVRAndroidResource androidResource,
+    public GVRMesh getNodeMesh(GVRAssimpImporter assimpImporter,
             String nodeName, int meshIndex) {
-        GVRAssimpImporter assimpImporter = GVRImporter.readFileFromResources(
-                this, androidResource,
-                GVRImportSettings.getRecommendedSettings());
+
         return assimpImporter.getNodeMesh(nodeName, meshIndex);
     }
 
@@ -817,11 +859,8 @@ public abstract class GVRContext {
      * 
      * @return The material, encapsulated as a {@link AiMaterial}.
      */
-    public AiMaterial getMeshMaterial(GVRAndroidResource androidResource,
+    public AiMaterial getMeshMaterial(GVRAssimpImporter assimpImporter,
             String nodeName, int meshIndex) {
-        GVRAssimpImporter assimpImporter = GVRImporter.readFileFromResources(
-                this, androidResource,
-                GVRImportSettings.getRecommendedSettings());
         return assimpImporter.getMeshMaterial(nodeName, meshIndex);
     }
 
@@ -1081,7 +1120,7 @@ public abstract class GVRContext {
     public GVRTexture loadTexture(GVRAndroidResource resource,
             GVRTextureParameters textureParameters) {
 
-        GVRTexture texture = sTextureCache.get(resource);
+        GVRTexture texture = textureCache.get(resource);
         if (texture == null) {
             assertGLThread();
 
@@ -1091,13 +1130,13 @@ public abstract class GVRContext {
             texture = bitmap == null ? null : new GVRBitmapTexture(this,
                     bitmap, textureParameters);
             if (texture != null) {
-                sTextureCache.put(resource, texture);
+                textureCache.put(resource, texture);
             }
         }
         return texture;
     }
 
-    private final static ResourceCache<GVRTexture> sTextureCache = new ResourceCache<GVRTexture>();
+    private final ResourceCache<GVRTexture> textureCache = new ResourceCache<GVRTexture>();
 
     /**
      * Loads a cube map texture synchronously.
@@ -1105,7 +1144,7 @@ public abstract class GVRContext {
      * <p>
      * Note that this method may take hundreds of milliseconds to return: unless
      * the cube map is quite tiny, you probably don't want to call this directly
-     * from your {@link GVRScript#onStep() onStep()} callback as that is called
+     * from your {@link GVRScript#onStep() onStsep()} callback as that is called
      * once per frame, and a long call will cause you to miss frames.
      * 
      * @param resourceArray
@@ -1349,7 +1388,7 @@ public abstract class GVRContext {
     public void loadBitmapTexture(BitmapTextureCallback callback,
             GVRAndroidResource resource, int priority)
             throws IllegalArgumentException {
-        GVRAsynchronousResourceLoader.loadBitmapTexture(this, sTextureCache,
+        GVRAsynchronousResourceLoader.loadBitmapTexture(this, textureCache,
                 callback, resource, priority);
     }
 
@@ -1400,7 +1439,7 @@ public abstract class GVRContext {
     public void loadCompressedTexture(CompressedTextureCallback callback,
             GVRAndroidResource resource) {
         GVRAsynchronousResourceLoader.loadCompressedTexture(this,
-                sTextureCache, callback, resource);
+                textureCache, callback, resource);
     }
 
     /**
@@ -1450,7 +1489,7 @@ public abstract class GVRContext {
     public void loadCompressedTexture(CompressedTextureCallback callback,
             GVRAndroidResource resource, int quality) {
         GVRAsynchronousResourceLoader.loadCompressedTexture(this,
-                sTextureCache, callback, resource, quality);
+                textureCache, callback, resource, quality);
     }
 
     /**
@@ -1728,7 +1767,7 @@ public abstract class GVRContext {
      */
     public void loadTexture(TextureCallback callback,
             GVRAndroidResource resource, int priority, int quality) {
-        GVRAsynchronousResourceLoader.loadTexture(this, sTextureCache,
+        GVRAsynchronousResourceLoader.loadTexture(this, textureCache,
                 callback, resource, priority, quality);
     }
 
@@ -1937,7 +1976,7 @@ public abstract class GVRContext {
     public Future<GVRTexture> loadFutureTexture(GVRAndroidResource resource,
             int priority, int quality) {
         return GVRAsynchronousResourceLoader.loadFutureTexture(this,
-                sTextureCache, resource, priority, quality);
+                textureCache, resource, priority, quality);
     }
 
     /**
@@ -1978,7 +2017,49 @@ public abstract class GVRContext {
     public Future<GVRTexture> loadFutureCubemapTexture(
             GVRAndroidResource resource) {
         return GVRAsynchronousResourceLoader.loadFutureCubemapTexture(this,
-                sTextureCache, resource, DEFAULT_PRIORITY,
+                textureCache, resource, DEFAULT_PRIORITY,
+                GVRCubemapTexture.faceIndexMap);
+    }
+
+    /**
+     * Simple, high-level method to load a compressed cube map texture asynchronously,
+     * for use with {@link GVRShaders#setMainTexture(Future)} and
+     * {@link GVRShaders#setTexture(String, Future)}.
+     *
+     * @param resource
+     *            A steam containing a zip file which contains six compressed textures.
+     *            The six textures correspond to +x, -x, +y, -y, +z, and -z faces of
+     *            the cube map texture respectively. The default names of the
+     *            six images are "posx.pkm", "negx.pkm", "posy.pkm", "negx.pkm",
+     *            "posz.pkm", and "negz.pkm", which can be changed by calling
+     *            {@link GVRCubemapTexture#setFaceNames(String[])}.
+     * @return A {@link Future} that you can pass to methods like
+     *         {@link GVRShaders#setMainTexture(Future)}
+     *
+     * @since 1.6.9
+     *
+     * @throws IllegalArgumentException
+     *             If you 'abuse' request consolidation by passing the same
+     *             {@link GVRAndroidResource} descriptor to multiple load calls.
+     *             <p>
+     *             It's fairly common for multiple scene objects to use the same
+     *             texture or the same mesh. Thus, if you try to load, say,
+     *             {@code R.raw.whatever} while you already have a pending
+     *             request for {@code R.raw.whatever}, it will only be loaded
+     *             once; the same resource will be used to satisfy both (all)
+     *             requests. This "consolidation" uses
+     *             {@link GVRAndroidResource#equals(Object)}, <em>not</em>
+     *             {@code ==} (aka "reference equality"): The problem with using
+     *             the same resource descriptor is that if requests can't be
+     *             consolidated (because the later one(s) came in after the
+     *             earlier one(s) had already completed) the resource will be
+     *             reloaded ... but the original descriptor will have been
+     *             closed.
+     */
+    public Future<GVRTexture> loadFutureCompressedCubemapTexture(
+            GVRAndroidResource resource) {
+        return GVRAsynchronousResourceLoader.loadFutureCompressedCubemapTexture(this,
+                textureCache, resource, DEFAULT_PRIORITY,
                 GVRCubemapTexture.faceIndexMap);
     }
 

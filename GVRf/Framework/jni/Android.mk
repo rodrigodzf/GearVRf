@@ -28,7 +28,7 @@ include $(PREBUILT_SHARED_LIBRARY)
 include $(CLEAR_VARS)
 
 ifndef OVR_MOBILE_SDK
-	OVR_MOBILE_SDK=../../ovr_mobile_sdk
+	OVR_MOBILE_SDK=../../ovr_sdk_mobile
 endif
 
 #include $(OVR_MOBILE_SDK)/VRLib/import_vrlib.mk
@@ -46,9 +46,10 @@ FILE_LIST := $(wildcard $(LOCAL_PATH)/*.cpp)
 LOCAL_SRC_FILES += $(FILE_LIST:$(LOCAL_PATH)/%=%)
 
 LOCAL_C_INCLUDES += $(OVR_MOBILE_SDK)/VrAppFramework/Src
-LOCAL_C_INCLUDES += $(OVR_MOBILE_SDK)/LibOVR/Include
-LOCAL_C_INCLUDES += $(OVR_MOBILE_SDK)/LibOVR/Src
+LOCAL_C_INCLUDES += $(OVR_MOBILE_SDK)/LibOVRKernel/Include
+LOCAL_C_INCLUDES += $(OVR_MOBILE_SDK)/LibOVRKernel/Src
 LOCAL_C_INCLUDES += $(OVR_MOBILE_SDK)/VrApi/Include
+LOCAL_C_INCLUDES += $(OVR_MOBILE_SDK)/VrAppSupport/Src
 
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/contrib/assimp
 LOCAL_C_INCLUDES +=	$(LOCAL_PATH)/contrib/assimp/include
@@ -110,8 +111,10 @@ LOCAL_SRC_FILES += $(FILE_LIST:$(LOCAL_PATH)/%=%)
 #LOCAL_STATIC_LIBRARIES += staticAssimp
 LOCAL_SHARED_LIBRARIES += assimp
 LOCAL_SHARED_LIBRARIES += vrapi
+LOCAL_STATIC_LIBRARIES += systemutils
+LOCAL_STATIC_LIBRARIES += vrmodel
 LOCAL_STATIC_LIBRARIES += vrappframework
-LOCAL_STATIC_LIBRARIES += libovr
+LOCAL_STATIC_LIBRARIES += libovrkernel
 
 LOCAL_ARM_NEON := true
 
@@ -129,6 +132,8 @@ LOCAL_LDLIBS += -ljnigraphics -llog -lGLESv3 -lEGL -lz -landroid
 
 include $(BUILD_SHARED_LIBRARY)
 
-$(call import-module,LibOVR/Projects/Android/jni)
+$(call import-module,LibOVRKernel/Projects/AndroidPrebuilt/jni)
 $(call import-module,VrApi/Projects/AndroidPrebuilt/jni)
-$(call import-module,VrAppFramework/Projects/Android/jni)
+$(call import-module,VrAppFramework/Projects/AndroidPrebuilt/jni)
+$(call import-module,VrAppSupport/SystemUtils/Projects/AndroidPrebuilt/jni)
+$(call import-module,VrAppSupport/VrModel/Projects/AndroidPrebuilt/jni)

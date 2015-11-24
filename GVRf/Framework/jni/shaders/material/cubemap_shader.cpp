@@ -85,10 +85,9 @@ static const char FRAGMENT_SHADER[] =
                 "}\n";
 
 CubemapShader::CubemapShader() :
-        program_(0), a_position_(0), u_model_(0), u_mvp_(0), u_texture_(0), u_color_(
+        program_(0), u_model_(0), u_mvp_(0), u_texture_(0), u_color_(
                 0), u_opacity_(0) {
     program_ = new GLProgram(VERTEX_SHADER, FRAGMENT_SHADER);
-    a_position_ = glGetAttribLocation(program_->id(), "a_position");
     u_model_ = glGetUniformLocation(program_->id(), "u_model");
     u_mvp_ = glGetUniformLocation(program_->id(), "u_mvp");
     u_texture_ = glGetUniformLocation(program_->id(), "u_texture");
@@ -120,8 +119,7 @@ void CubemapShader::render(const glm::mat4& model_matrix,
     }
 
 #if _GVRF_USE_GLES3_
-    mesh->setVertexLoc(a_position_);
-    mesh->generateVAO(Material::CUBEMAP_SHADER);
+    mesh->generateVAO();
 
     glUseProgram(program_->id());
 
@@ -134,7 +132,7 @@ void CubemapShader::render(const glm::mat4& model_matrix,
     glUniform1f(u_opacity_, opacity);
 
     glBindVertexArray(mesh->getVAOId(Material::CUBEMAP_SHADER));
-    glDrawElements(GL_TRIANGLES, mesh->triangles().size(), GL_UNSIGNED_SHORT,
+    glDrawElements(render_data->draw_mode(), mesh->indices().size(), GL_UNSIGNED_SHORT,
             0);
     glBindVertexArray(0);
 #else
@@ -155,8 +153,8 @@ void CubemapShader::render(const glm::mat4& model_matrix,
 
     glUniform1f(u_opacity_, opacity);
 
-    glDrawElements(GL_TRIANGLES, mesh->triangles().size(), GL_UNSIGNED_SHORT,
-            mesh->triangles().data());
+    glDrawElements(render_data->draw_mode(), mesh->indices().size(), GL_UNSIGNED_SHORT,
+            mesh->indices().data());
 #endif
 
     checkGlError("CubemapShader::render");

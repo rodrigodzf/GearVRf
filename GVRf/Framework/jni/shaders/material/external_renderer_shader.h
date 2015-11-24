@@ -10,8 +10,11 @@
 
 #include "objects/recyclable_object.h"
 
-typedef void (*GVRF_ExternalRenderer)(long data, const float* vertices,
-                                      int vcount, const float* projection, int pcount);
+typedef void (*GVRF_ExternalRenderer)(long data,
+                                      const float* bounding_volume, int vcount,
+                                      const float* projection, int pcount,
+                                      const float* texCoords, int tcount,
+                                      float opacity);
 extern "C" void GVRF_installExternalRenderer(GVRF_ExternalRenderer renderer);
 
 namespace gvr {
@@ -31,6 +34,8 @@ private:
             const ExternalRendererShader& shader);
     ExternalRendererShader& operator=(
             ExternalRendererShader&& shader);
+
+    float scratchBuffer[6];
 };
 
 }
